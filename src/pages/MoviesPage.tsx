@@ -28,17 +28,12 @@ const MoviesPage: React.FC = () => {
     fetchMovies();
   }, []);
 
-  const convertToBase64 = (poster?: Uint8Array) => {
-    console.log("C: ", poster);
-    if (!poster) {
-      return 'https://via.placeholder.com/150';
+  const getPosterSrc = (poster?: string | Uint8Array) => {
+    if (!poster) return 'https://via.placeholder.com/150';
+    if (typeof poster === 'string') {
+      return poster.startsWith('data:') ? poster : `data:image/jpeg;base64,${poster}`;
     }
-    let binary = '';
-    for (let i = 0; i < poster.length; i++) {
-      binary += String.fromCharCode(poster[i]);
-    }
-    console.log("B: ", binary);
-    return `data:image/jpeg;base64,${window.btoa(binary)}`;
+    return 'https://via.placeholder.com/150';
   };
 
   if (loading) return <p>Loading movies…</p>;
@@ -52,7 +47,7 @@ const MoviesPage: React.FC = () => {
           <div key={m.movieID} className="movie-item">
             <div className="movie-poster">
               <img
-                src={convertToBase64(m?.poster)}
+                src={getPosterSrc(m?.poster)}
                 alt={m.title || 'Poster'}
                 className="poster-img"
               />

@@ -1,5 +1,8 @@
+
+// ReservationEditPage.tsx
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import axios from 'axios';
 import { useUser } from '../context/UserContext';
 import { Screening } from '../types/Screening';
 import '../css/ReservationPage.css';
@@ -12,8 +15,7 @@ const ReservationEditPage: React.FC = () => {
   const screening: Screening | undefined = location.state?.screening;
   const reservationId: number | undefined = location.state?.reservationId;
   const reservedSeats: number[] = location.state?.reservedSeats || [];
-  console.log("Location:" + location.state);
-  console.log("Screening:" + screening);
+
   const [selectedSeats, setSelectedSeats] = useState<number[]>([]);
 
   useEffect(() => {
@@ -26,13 +28,9 @@ const ReservationEditPage: React.FC = () => {
 
   if (!screening || reservationId === undefined) return null;
 
-  const raw = screening.availableSeats as any;
-  const seatsArray: boolean[] = Array.isArray(raw)
-    ? raw
-    : Array.isArray(raw?.boolean)
-      ? raw.boolean
-      : [];
-      console.log("Seats array:", raw);
+  const seatsArray: boolean[] = Array.isArray(screening.availableSeats)
+    ? screening.availableSeats
+    : [];
 
   const handleSeatClick = (index: number) => {
     const isAvailable = seatsArray[index];
@@ -41,9 +39,7 @@ const ReservationEditPage: React.FC = () => {
     if (!isAvailable && !isPreviouslyReserved) return;
 
     setSelectedSeats(prev =>
-      prev.includes(index)
-        ? prev.filter(i => i !== index)
-        : [...prev, index]
+      prev.includes(index) ? prev.filter(i => i !== index) : [...prev, index]
     );
   };
 
@@ -53,43 +49,19 @@ const ReservationEditPage: React.FC = () => {
       return;
     }
 
-    const soapEnvelope = `
-    <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
-                      xmlns:tem="http://tempuri.org/">
-      <soapenv:Header/>
-      <soapenv:Body>
-        <tem:EditReservation>
-          <tem:reservationId>${reservationId}</tem:reservationId>
-          <tem:screeningId>${screening.screeningID}</tem:screeningId>
-          <tem:customerName>${username}</tem:customerName>
-          <tem:reservedSeats>
-            ${selectedSeats.map(i => `<int xmlns="http://schemas.microsoft.com/2003/10/Serialization/Arrays">${i}</int>`).join('')}
-          </tem:reservedSeats>
-        </tem:EditReservation>
-      </soapenv:Body>
-    </soapenv:Envelope>`.trim();
-
     try {
       const baseUrl = process.env.REACT_APP_API_BASE_URL;
-       console.log("URL: " + baseUrl);
-      const response = await fetch(`${baseUrl}/ReservationService`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'text/xml; charset=utf-8',
-          'SOAPAction': 'http://tempuri.org/IReservationService/EditReservation'
-        },
-        body: soapEnvelope
-      });
+      await axios.put(`${baseUrl}/api/reservation/${reservationId}`, {
+        screeningId: screening.screeningID,
+        accountUsername: username,
+        reservedSeats: selectedSeats
+      }, { withCredentials: true });
 
-      if (!response.ok) throw new Error(`SOAP fault: ${response.statusText}`);
-
-      const text = await response.text();
-      console.log('SOAP Response:', text);
-      alert('Reservation was updated.');
+      alert('Reservation updated successfully.');
       navigate('/reservations');
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      alert('Error occured during reservation.');
+      alert(`Error during reservation update: ${err.message}`);
     }
   };
 
@@ -98,7 +70,6 @@ const ReservationEditPage: React.FC = () => {
       <h1>Edit reservation</h1>
       <div className="seats-container">
         {seatsArray.map((isAvailable, index) => {
-          console.log("A: " + seatsArray);
           const isPreviouslyReserved = reservedSeats.includes(index);
           const isSelectable = isAvailable || isPreviouslyReserved;
 

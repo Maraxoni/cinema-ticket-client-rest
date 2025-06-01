@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import axios from 'axios';
 import { useUser } from '../context/UserContext';
 import { Screening } from '../types/Screening';
 import '../css/ReservationPage.css';
@@ -8,28 +9,45 @@ const ReservationPage: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const { username } = useUser();
-  const screening: Screening | undefined = location.state?.screening;
 
+  // Initial screening from navigation state
+  const initialScreening: Screening | undefined = location.state?.screening;
+
+  // State to hold screening, so we can update availableSeats dynamically
+  const [screening, setScreening] = useState<Screening | undefined>(initialScreening);
   const [selectedSeats, setSelectedSeats] = useState<number[]>([]);
 
   useEffect(() => {
-    if (!screening) navigate('/screenings');
+    if (!screening) {
+      navigate('/screenings');
+      return;
+    }
   }, [screening, navigate]);
 
   if (!screening) return null;
 
-  // Zakładam, że screening.availableSeats to boolean[] oznaczające dostępność miejsc
   const seatsArray: boolean[] = Array.isArray(screening.availableSeats)
     ? screening.availableSeats
     : [];
 
   const handleSeatClick = (index: number) => {
-    if (!seatsArray[index]) return; // niedostępne
+    if (!seatsArray[index]) return;
     setSelectedSeats(prev =>
-      prev.includes(index)
-        ? prev.filter(i => i !== index)
-        : [...prev, index]
+      prev.includes(index) ? prev.filter(i => i !== index) : [...prev, index]
     );
+  };
+
+  const fetchScreening = async () => {
+    try {
+      const baseUrl = process.env.REACT_APP_API_BASE_URL;
+      const response = await axios.get<Screening>(`${baseUrl}/api/screening/${screening.screeningID}`, {
+        withCredentials: true,
+      });
+      setScreening(response.data);
+      setSelectedSeats([]);  // reset selected seats after refresh
+    } catch (err) {
+      console.error('Failed to fetch screening:', err);
+    }
   };
 
   const handleReserve = async () => {
@@ -40,38 +58,20 @@ const ReservationPage: React.FC = () => {
 
     try {
       const baseUrl = process.env.REACT_APP_API_BASE_URL;
+      await axios.post(`${baseUrl}/api/reservation`, {
+        screeningId: screening.screeningID,
+        accountUsername: username,
+        reservedSeats: selectedSeats
+      }, { withCredentials: true });
 
-      // REST API: POST /api/reservations
-      // Przykładowy body:
-      // {
-      //   screeningId: number,
-      //   username: string,
-      //   reservedSeats: number[]
-      // }
+      alert('Reservation successful.');
 
-      const response = await fetch(`${baseUrl}/api/reservations`, {
-        method: 'POST',
-        credentials: 'include', // wysyła credentials (cookie)
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          screeningId: screening.screeningID,
-          username,
-          reservedSeats: selectedSeats
-        })
-      });
+      // Odśwież dane seansu, żeby mieć aktualne miejsca
+      await fetchScreening();
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Reservation failed: ${response.status} ${errorText}`);
-      }
-
-      alert('Rezerwacja przebiegła pomyślnie.');
-      navigate('/screenings');
     } catch (err: any) {
       console.error(err);
-      alert(`Błąd przy wysyłce rezerwacji: ${err.message}`);
+      alert(`Error during reservation: ${err.message}`);
     }
   };
 
