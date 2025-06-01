@@ -1,76 +1,122 @@
-
-// ReservationEditPage.tsx
 import React, { useState, useEffect } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useUser } from '../context/UserContext';
-import { Screening } from '../types/Screening';
 import '../css/ReservationPage.css';
+
+interface Screening {
+  screeningID: number;
+  availableSeats: boolean[]; // lub inny typ, dostosuj do API
+  // inne pola...
+}
 
 const ReservationEditPage: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const { username } = useUser();
 
-  const screening: Screening | undefined = location.state?.screening;
   const reservationId: number | undefined = location.state?.reservationId;
-  const reservedSeats: number[] = location.state?.reservedSeats || [];
+  if (!reservationId) {
+    navigate('/reservations');
+  }
 
+  const [screening, setScreening] = useState<Screening | null>(null);
+  const [reservedSeats, setReservedSeats] = useState<number[]>([]);
   const [selectedSeats, setSelectedSeats] = useState<number[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!screening || reservationId === undefined) {
-      navigate('/reservations');
-    } else {
-      setSelectedSeats(reservedSeats);
+    if (!username || !reservationId) {
+      navigate('/login');
+      return;
     }
-  }, [screening, reservationId, reservedSeats, navigate]);
 
-  if (!screening || reservationId === undefined) return null;
+    const baseUrl = process.env.REACT_APP_API_BASE_URL;
 
-  const seatsArray: boolean[] = Array.isArray(screening.availableSeats)
-    ? screening.availableSeats
-    : [];
+    const fetchReservation = async () => {
+      try {
+        // Pobierz rezerwację (zawierającą seats i screeningId)
+        const resRes = await axios.get(`${baseUrl}/api/Reservation/${reservationId}`, {
+          withCredentials: true,
+        });
+        const reservation = resRes.data;
+        setReservedSeats(reservation.reservedSeats ?? []);
+
+        // Pobierz dane screening (z dostępnością miejsc)
+        const screeningRes = await axios.get(`${baseUrl}/api/Screening/${reservation.screeningId}`, {
+          withCredentials: true,
+        });
+        setScreening(screeningRes.data);
+
+        // Ustaw początkowo selectedSeats na obecne zarezerwowane
+        setSelectedSeats(reservation.reservedSeats ?? []);
+
+        setLoading(false);
+      } catch (err: any) {
+        setError('Failed to load reservation data: ' + err.message);
+        setLoading(false);
+      }
+    };
+
+    fetchReservation();
+  }, [username, reservationId, navigate]);
+
+  if (loading) return <p>Loading reservation data...</p>;
+  if (error) return <p className="error">{error}</p>;
+  if (!screening) return <p>Screening data not found</p>;
+
+  const seatsArray = screening.availableSeats ?? [];
 
   const handleSeatClick = (index: number) => {
     const isAvailable = seatsArray[index];
     const isPreviouslyReserved = reservedSeats.includes(index);
 
+    // Miejsce musi być dostępne lub wcześniej zarezerwowane, żeby można było zmieniać
     if (!isAvailable && !isPreviouslyReserved) return;
 
     setSelectedSeats(prev =>
-      prev.includes(index) ? prev.filter(i => i !== index) : [...prev, index]
+      prev.includes(index)
+        ? prev.filter(i => i !== index)
+        : [...prev, index]
     );
   };
 
   const handleEdit = async () => {
-    if (!username) {
+    if (!username || !reservationId || !screening) {
       navigate('/login');
       return;
     }
 
     try {
       const baseUrl = process.env.REACT_APP_API_BASE_URL;
-      await axios.put(`${baseUrl}/api/reservation/${reservationId}`, {
-        screeningId: screening.screeningID,
-        accountUsername: username,
-        reservedSeats: selectedSeats
-      }, { withCredentials: true });
 
-      alert('Reservation updated successfully.');
+      // PUT update reservation z REST API
+      await axios.put(
+        `${baseUrl}/api/Reservation/${reservationId}`,
+        {
+          screeningId: screening.screeningID,
+          AccountUsername: username,
+          reservedSeats: selectedSeats,
+        },
+        { withCredentials: true }
+      );
+
+      alert('Reservation updated successfully');
       navigate('/reservations');
     } catch (err: any) {
-      console.error(err);
-      alert(`Error during reservation update: ${err.message}`);
+      console.error('Error updating reservation:', err.message);
+      alert('Failed to update reservation');
     }
   };
 
   return (
     <div className="reservation-page">
-      <h1>Edit reservation</h1>
+      <h1>Edit Reservation</h1>
       <div className="seats-container">
         {seatsArray.map((isAvailable, index) => {
           const isPreviouslyReserved = reservedSeats.includes(index);
+          const isSelected = selectedSeats.includes(index);
           const isSelectable = isAvailable || isPreviouslyReserved;
 
           return (
@@ -79,7 +125,7 @@ const ReservationEditPage: React.FC = () => {
               className={[
                 'seat',
                 isAvailable ? 'available' : isPreviouslyReserved ? 'reserved-by-user' : 'unavailable',
-                selectedSeats.includes(index) ? 'selected' : ''
+                isSelected ? 'selected' : '',
               ].join(' ')}
               onClick={() => handleSeatClick(index)}
               disabled={!isSelectable}
@@ -89,12 +135,13 @@ const ReservationEditPage: React.FC = () => {
           );
         })}
       </div>
+
       <button
         className="reserve-button"
         onClick={handleEdit}
         disabled={selectedSeats.length === 0}
       >
-        Save changes ({selectedSeats.length})
+        Save Changes ({selectedSeats.length})
       </button>
     </div>
   );
