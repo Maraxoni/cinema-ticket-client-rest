@@ -66,6 +66,8 @@ const ReservationPage: React.FC = () => {
 
       alert('Reservation successful.');
 
+      navigate('/screenings');
+
       // Odśwież dane seansu, żeby mieć aktualne miejsca
       await fetchScreening();
 
